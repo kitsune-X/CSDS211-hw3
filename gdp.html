@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <!--引入js脚本文件-->
+        <script src="jquery-3.6.0.js"></script>
+        <script src="d3.min.js"></script>
+        <script src="d3-tip.js"></script>
+        <style>
+            .tooltip {
+                opacity: 0;
+                position: absolute;
+                top: -12px;
+                left: 0;
+                padding: 0.6em 1em;
+                background: #fff;
+                text-align: center;
+                border: 1px solid #ddd;
+                z-index: 10;
+                transition: all 0.2s ease-out;
+                pointer-events: none;
+                transform: translate(-50%, calc(-100% - 14px));
+            }
+
+            .tooltip:before {
+                content: '';
+                position: absolute;
+                bottom: 0;
+                left: 50%;
+                width: 12px;
+                height: 12px;
+                background: white;
+                border: 1px solid #ddd;
+                border-top-color: transparent;
+                border-left-color: transparent;
+                transform: translate(-50%, 50%) rotate(45deg);
+                transform-origin: center center;
+                z-index: 10;
+            }
+
+            .tooltip-range {
+                margin-bottom: 0.2em;
+                font-weight: 600;
+            }
+        </style>
+    </head>
+    <body>
+        <a href="worldmap.html" class="btn btn-primary"><< Back</a>
+        <div id="tooltip" class="tooltip">
+            <div class="tooltip-range">
+                GDP: <span id="range"></span>
+            </div>
+            <div class="tooltip-value">
+                Date: <span id="count"></span>
+            </div>
+        </div>
+        <div style="height:700px ;
+            width: 1100px; 
+            border: 2px solid grey;
+            margin-top: 20px;
+            margin-left: 50px;
+            position: relative;
+            float: center;
+            overflow: auto;">
+            <svg id="line" style="height:700px ; 
+                    width: 1100px;
+                    position: relative;
+                    float: center;">
+            </svg>
+        </div>
+    </body>
+    <script>
+        // JavaScript Document
+        UrlParam = function() { // url参数 
+            var data, index; 
+            (function init() { 
+                data = []; //值，如[["1","2"],["zhangsan"],["lisi"]] 
+                index = {}; //键:索引，如{a:0,b:1,c:2} 
+                var u = window.location.search.substr(1); 
+                if (u != '') { 
+                    var params = decodeURIComponent(u).split('&'); 
+                    for (var i = 0, len = params.length; i < len; i++) { 
+                        if (params[i] != '') { 
+                            var p = params[i].split("="); 
+                            if (p.length == 1 || (p.length == 2 && p[1] == '')) {// p | p= | = 
+                                data.push(['']); 
+                                index[p[0]] = data.length - 1; 
+                            } else if (typeof(p[0]) == 'undefined' || p[0] == '') { // =c 舍弃 
+                                continue; 
+                            } else if (typeof(index[p[0]]) == 'undefined') {
+                                data.push([p[1]]); 
+                                index[p[0]] = data.length - 1; 
+                            } else { 
+                                data[index[p[0]]].push(p[1]); 
+                            } 
+                        }
+                    } 
+                } 
+            })(); 
+            return { 
+                param : function(o) { // o: 参数名或者参数次序 
+                    try { 
+                        return (typeof(o) == 'number' ? data[o][0] : data[index[o]][0]); 
+                    } catch (e) { 
+                    } 
+                },
+                paramValues : function(o) { // o: 参数名或者参数次序 
+                    try { 
+                        return (typeof(o) == 'number' ? data[o] : data[index[o]]); 
+                    } catch (e) {} 
+                },
+                hasParam : function(paramName) { 
+                    return typeof(paramName) == 'string' ? typeof(index[paramName]) != 'undefined' : false; 
+                },
+                paramMap : function() { 
+                    var map = {}; 
+                    try { 
+                        for (var p in index) { map[p] = data[index[p]]; } 
+                    } catch (e) {} 
+                    return map; 
+                } 
+            } 
+        }();
+        var content = window.location.href;
+        var cid=UrlParam.paramValues("cid");
+        $.ajax({
+            url:"http://api.worldbank.org/v2/countries/"+cid+"/indicators/NY.GDP.MKTP.CD?per_page=5000&format=json",
+            type:"GET",
+            dataType:"json",
+            success:function(data){
+                let arr=data;
+                let datasources=[];
+                let x=[];
+                for(var i=10;i>0;i--){
+                    let date = arr[1][i]['date'];
+                    let value = arr[1][i]['value'];
+                    x.push(date);
+                    datasources.push({'year':date,'GDP':value});
+                }
+                const tooltip = d3.select("#tooltip");
+                //绘制比例尺和坐标轴
+                const x_scale=d3.scaleBand().domain(d3.range(datasources.length)).range([0,800]).padding(1).paddingInner(1)
+                const y_scale=d3.scaleLinear().domain([d3.min(datasources,function(d){
+                    return d.GDP;
+                }),d3.max(datasources,function(d){return d.GDP;})]).range([500,0])
+    
+                const xAxis=d3.axisBottom(x_scale).tickFormat(function (d,i){
+                    return datasources[i].year;
+                })
+                const yAxis=d3.axisLeft(y_scale);
+                let g1=d3.select('#line').append('g').attr('transform','translate(' + 20 + ',' + 20 + ')').style('border','1px solid #999999')
+                g1.append("g")
+                    .attr("class","x-axis")
+                    .attr("transform", "translate(100,600)")
+                    .call(xAxis);
+                g1.append("g")
+                    .attr("class","y-axis")
+                    .attr("transform", "translate(100,100)")
+                    .call(yAxis);
+                //绘制折线，制定折线关系函数
+                let line = d3.line()
+                    .x(function(d,i){
+                        return x_scale(i) + x_scale.bandwidth() / 2 + 100;
+                    })
+                    .y(function(d){
+                        return y_scale(d.GDP);
+                    })
+                    .curve(d3.curveCardinal);
+                g1.append('path')
+                    .datum(datasources)
+                    .attr("class","line")
+                    .attr('d',line)
+                    .attr('fill','none')
+                    .attr('stroke','#69b3a2')
+                    .attr("stroke-width", "3px");
+                //绘制圆点
+                g1.selectAll(".circle")
+                    .data(datasources)
+                    .enter()
+                    .append("circle")
+                    .attr("class","circle")
+                    .attr("cx", function(d,i){
+                        return x_scale(i) + x_scale.bandwidth() / 2 +100;
+                    })
+                    .attr("cy",function(d){
+                        return y_scale(d.GDP);
+                    })
+                    .attr("r",4)
+                    .attr("fill","#ffffff")
+                    .attr("stroke", "#69b3a2")
+                    .attr("stroke-width","3px");
+                let _w = (1100-30*2)/(datasources.length-1);
+                g1.selectAll(".rect")
+                    .data(datasources)
+                    .enter()
+                    .append("rect")
+                    .attr("class","rect")
+                    .attr("x",function(d,i){
+                        return x_scale(i) - _w / 2 ;
+                    })
+                    .attr("y",30)
+                    .attr("width", _w)
+                    .attr("height",700-30*2)
+                    .attr("fill","transparent")
+                    .on("mouseover", function (d,i) {
+                        tooltip.style("opacity", 1)
+                        tooltip.select("#range").text(d.GDP)
+                        tooltip.select("#count").text(d.year)
+                        // 计算svg 在页面中的位置
+                        let svgRect = g1.node().getBoundingClientRect();
+                        let svgLeft = svgRect.left;
+                        
+                        let svgTop = svgRect.top;
+                        // 滚动条的位置
+                        let scrollTop = document.documentElement.scrollTop || document.body.scrollTop;
+                        tooltip.style("left", (x_scale(i) + x_scale.bandwidth() / 2 + 175) + "px")
+                            .style("top", (y_scale(d.GDP)+svgTop+scrollTop) + "px")
+                    })
+                    .on("mouseout", function (d) {
+                        tooltip.style("opacity", 0)
+                    })
+                //绘制标签
+                g1.append('text').attr('x',250+50).attr('y',10).text(cid+':Gross Domestic Product(GDP)')
+                g1.append('text').attr('x',40).attr('y',80).text('GDP')
+                g1.append('text').attr('x',50+850).attr('y',600).text('Year')
+                g1.append('line').attr('x1',50+500).attr('y1',80).attr('x2',50+510).attr('y2',80).attr('stroke','blue').attr('fill','none')
+                g1.append('text').attr('x',50+515).attr('y',80).text('Annual GDP')
+            }              
+        });
+    </script>
+</html>
