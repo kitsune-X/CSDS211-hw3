@@ -1,1 +1,3 @@
-# CSDS211-hw3
+How to start the project?
+
+Just download and open worldmap.html
