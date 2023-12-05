@@ -1,3 +1,3 @@
 How to start the project?
 
-Just download and open worldmap.html
+Just download the whole folder and open worldmap.html
